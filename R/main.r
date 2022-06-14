@@ -2,6 +2,7 @@
 # 3D relief map of Europe in R
 # Milos Popovic 2022/06/14
 #############################################
+
 # libraries we need
 libs <- c(
     "elevatr", "rayshader", "tidyverse", "sf", "giscoR", "jsonlite",
@@ -19,40 +20,58 @@ invisible(lapply(libs, library, character.only = T))
 
 # 1. GET COUNTRY MAP
 #-------------------
-
 crsLONGLAT <- "+proj=longlat +datum=WGS84 +no_defs"
 
-country_sf <- giscoR::gisco_get_countries(
-    year = "2016", epsg = "4326",
-    resolution = "10", region = c("Europe", "Asia")
-)
+get_europe_sf <- function(europe_sf, europe_transformed) {
+    europe_sf <- giscoR::gisco_get_countries(
+        year = "2016", epsg = "4326",
+        resolution = "10", region = c("Europe", "Asia")
+    )
 
-country_transformed <- st_transform(country_sf, crs = crsLONGLAT)
+    europe_transformed <- sf::st_transform(europe_sf, crs = crsLONGLAT)
 
-# bounding box
-bbox <- st_sfc(
-    st_polygon(list(cbind(
-        c(-10.5, 48.5, 48.5, -10.5, -10.5),
-        c(30.0, 30.0, 69.5, 69.5, 30.0)
-    ))),
-    crs = crsLONGLAT
-)
+    return(europe_transformed)
+}
 
-bb <- st_bbox(bbox)
+europe_transformed <- get_europe_sf()
 
-eur <- st_crop(country_sf, bb)
+get_europe_cropped <- function(bbox, bb, eur) {
 
-country_elevation <- get_elev_raster(
-    locations = eur,
-    z = 5, clip = "locations"
-)
+    # bounding box
+    bbox <- st_sfc(
+        st_polygon(list(cbind(
+            c(-10.5, 48.5, 48.5, -10.5, -10.5),
+            c(30.0, 30.0, 69.5, 69.5, 30.0)
+        ))),
+        crs = crsLONGLAT
+    )
 
-elevation_mat <- raster_to_matrix(country_elevation)
+    bb <- sf::st_bbox(bbox)
 
+    eur <- sf::st_crop(europe_transformed, bb)
+
+    return(eur)
+}
+
+eur <- get_europe_cropped()
+
+get_elevation_data <- function(europe_elevation, elevation_mat) {
+    europe_elevation <- elevatr::get_elev_raster(
+        locations = eur,
+        z = 5, clip = "locations"
+    )
+
+    elevation_mat <- rayshader::raster_to_matrix(europe_elevation)
+    return(elevation_mat)
+}
+
+elevation_mat <- get_elevation_data()
+
+# define query parameters
 h <- 2472
 w <- 3536
 
-bb <- st_bbox(eur)
+bb <- sf::st_bbox(eur)
 type <- "World_Imagery"
 file <- NULL
 height <- h * 2
@@ -111,7 +130,6 @@ get_map_png <- function(img_file, eur_img) {
 
 eur_img <- get_map_png()
 
-
 # 4. 3D MAP
 #---------
 
@@ -128,12 +146,5 @@ elevation_mat %>%
 render_highquality(
     filename = "europe_dem.png", lightintensity = 2500,
     lightaltitude = 90, title_text = "",
-    title_font = "Georgia",
-    title_color = "grey20",
-    title_size = 100,
-    title_offset = c(
-        360,
-        180
-    ), width = w * 2, height = h * 2
+    width = w * 2, height = h * 2
 )
-
